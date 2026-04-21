@@ -1,12 +1,11 @@
 const express = require('express');
-const fetch = require('node-fetch');
 const cors = require('cors');
 
 const app = express();
 app.use(cors());
 
 const cache = new Map();
-const CACHE_TTL = 60 * 60 * 1000; // 1 hour
+const CACHE_TTL = 60 * 60 * 1000;
 
 app.get('/menu', async (req, res) => {
   const { district, school } = req.query;
@@ -15,7 +14,6 @@ app.get('/menu', async (req, res) => {
     return res.status(400).json({ error: 'Missing district or school parameter' });
   }
 
-  // Only allow alphanumeric + hyphens to prevent injection
   if (!/^[a-z0-9-]+$/i.test(district) || !/^[a-z0-9-]+$/i.test(school)) {
     return res.status(400).json({ error: 'Invalid characters in parameters' });
   }
@@ -53,3 +51,4 @@ app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`LunchTrack backend running on port ${PORT}`));
+
