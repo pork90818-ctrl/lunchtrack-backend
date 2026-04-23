@@ -11,6 +11,7 @@ const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
   'Accept': 'application/json, text/plain, */*',
   'Accept-Language': 'en-US,en;q=0.9',
+  'X-Requested-With': 'XMLHttpRequest',
 };
 
 function getDateParts() {
@@ -20,12 +21,6 @@ function getDateParts() {
     month: String(now.getMonth() + 1).padStart(2, '0'),
     day: String(now.getDate()).padStart(2, '0'),
   };
-}
-
-async function tryFetch(url) {
-  const res = await fetch(url, { headers: { ...HEADERS, 'Referer': url, 'Origin': new URL(url).origin } });
-  console.log(`  ${res.status} ${url}`);
-  return res;
 }
 
 app.get('/menu', async (req, res) => {
@@ -42,23 +37,32 @@ app.get('/menu', async (req, res) => {
   }
 
   const { year, month, day } = getDateParts();
-  const base = `https://${district}.api.nutrislice.com`;
 
   const urlsToTry = [
-    `${base}/menu/api/weeks/school/${school}/menu-type/lunch/${year}/${month}/${day}/`,
-    `${base}/menu/api/weeks/school/${school}/menu-type/lunch/`,
-    `${base}/menu/api/weeks/school/${school}/menu-type/lunch/${year}/${month}/01/`,
+    // Non-api subdomain (what the browser actually uses)
+    `https://${district}.nutrislice.com/menu/${school}/lunch/api/weeks/`,
+    `https://${district}.nutrislice.com/menu/${school}/lunch/api/weeks/${year}/${month}/${day}/`,
+    // api subdomain with date
+    `https://${district}.api.nutrislice.com/menu/api/weeks/school/${school}/menu-type/lunch/${year}/${month}/${day}/`,
+    // api subdomain without date
+    `https://${district}.api.nutrislice.com/menu/api/weeks/school/${school}/menu-type/lunch/`,
   ];
-
-  console.log(`Trying ${urlsToTry.length} URLs for ${district}/${school}`);
 
   for (const url of urlsToTry) {
     try {
-      const response = await tryFetch(url);
+      console.log(`Trying: ${url}`);
+      const response = await fetch(url, {
+        headers: {
+          ...HEADERS,
+          'Referer': `https://${district}.nutrislice.com/`,
+          'Origin': `https://${district}.nutrislice.com`,
+        }
+      });
+      console.log(`  Status: ${response.status}`);
       if (response.ok) {
         const data = await response.json();
         cache.set(cacheKey, { data, timestamp: Date.now() });
-        console.log(`Success with: ${url}`);
+        console.log(`  Success!`);
         return res.json(data);
       }
     } catch (err) {
@@ -66,10 +70,23 @@ app.get('/menu', async (req, res) => {
     }
   }
 
-  res.status(404).json({ error: 'Could not fetch menu — all URL formats returned errors' });
+  res.status(404).json({
+    error: 'Could not fetch menu from Nutrislice',
+    hint: 'Check Railway logs to see which URLs were tried'
+  });
 });
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`LunchTrack backend running on port ${PORT}`));
+const server = app.listen(PORT, () => console.log(`LunchTrack backend running on port ${PORT}`));
+
+// Handle Railway shutdown signals gracefully
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, shutting down gracefully');
+  server.close(() => process.exit(0));
+});
+
+process.on('SIGINT', () => {
+  server.close(() => process.exit(0));
+});
